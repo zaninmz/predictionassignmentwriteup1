@@ -1,0 +1,102 @@
+---
+title: "Prediction Assignment Writeup"
+author: "MZANIN"
+date: "September 20, 2016"
+output: html_document
+---
+#Project overview
+
+This project uses data sets downloaded from the Human Activity Recognition website (http://groupware.les.inf.puc-rio.br/har). The researchers developed this data set by recording "users performing
+the same activity correctly and with a set of common mistakes with wearable sensors". The classifier variable is classified such that "class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes"(http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf). The purpose of this project is to develop a prediction model that will accurately predict the aformentioned classifier.
+
+```{r, include=FALSE}
+library(caret)
+library(randomForest)
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+```
+
+```{r, cache=TRUE}
+##read data
+train <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", header = TRUE, na.strings = c("","", "NA"))
+test <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", header = TRUE, na.strings = c("","", "NA"))
+```
+
+##Exploratory Data Analysis
+```{r, results="hide"}
+View(train)
+```
+Using the View() function we can inspect that many of the variables have a large number of NA values. The code below quntifies this indicating there are only 406 out of 19622 complete cases.
+```{r}
+dim(train)
+complete <- complete.cases(train)
+table(complete)
+```
+
+##Data cleaning
+Taking into account the significant number of variables with a majority of observations as missing cases, I retain only those variables with complete cases:
+```{r}
+train_com <- train[,colSums(is.na(train)) == 0]
+test_com <- test[,colSums(is.na(test)) == 0]
+```
+I then remove the first seven columns that will not provide relevant data to the training model. These include the user name, time stamps and the window numbers.
+```{r}
+train_com <-train_com[,-c(1:7)]
+test_com <-test_com[,-c(1:7)]
+train_com <- train_com[, sapply(train_com[,c(1:52)], is.numeric)]
+test_com <- test_com[, sapply(test_com, is.numeric)]
+```
+The dimensions of the cleaned data sets are provided below
+```{r}
+dim(train_com)
+dim(test_com)
+```
+
+##Training Model
+I divide the cleaned training data set into a training and test set.
+```{r}
+set.seed(32323)
+inTrain <- createDataPartition(y = train_com$classe, p = .75, list = FALSE)
+training <- train_com[inTrain,]
+testing <- train_com[-inTrain,]
+```
+
+Given the relatively high dimensionality of this data set, I use a random forest algorithm with ten fold cross validation to fit this model due to its commonly held accuracy with respect to predicting non-linear relationships between response and predictor variables and approach to decorrelating trees by varying the predictor subset size at each split across all trees.
+
+```{r, message=FALSE, cache=TRUE}
+control <- trainControl(method = "cv", number = 10, allowParallel = TRUE)
+modfit <- train(classe ~., data = training, method = "rf", trControl = control)
+print(modfit)
+```
+
+As indicated by the output above, the best model fit uses 27 of the 52 predictors with an accuracy of ~.99. A graph comparing model accuracy with the number of predictors selected can be reviewed in the Appendix.
+
+I apply the model to the test set to assess accuracy with respect to the same.
+
+```{r}
+prediction <- predict(modfit, newdata = testing)
+confusionMatrix(prediction, testing$classe)
+```
+
+As noted in the output above, the model accuracy is ~.9947 with respect to the test set. The out of sample error is a calculation of the error found by applying a prediction model to a test set and can be calculated as (1 - test set accuracy)*100:
+
+```{r}
+(1 - .9946982) * 100
+```
+
+As such the out of sample error for this model is .53%
+
+##Test set predictions
+A test set of 20 observations was provided as part of this project. The predictions for the same using the model created above are provided below:
+
+```{r}
+predict(modfit, test)
+```
+
+#Appendix
+```{r}
+plot(modfit, main = "Accuracy by Predictors")
+```
+
